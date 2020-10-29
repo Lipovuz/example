@@ -1,0 +1,164 @@
+
+const SCENARIO_VIEW_MY_RISKS = 'view-my-risks';
+
+const SCENARIO_VIEW_MY_RISK = 'view-my-risk';
+
+const SCENARIO_EDIT_MY_RISK = 'edit-my-risk'; //Замечание: Я могу редактировать свой риск, НО только если я его последний редактор!
+
+const SCENARIO_ADD_MY_RISK = 'add-my-risk';
+
+const SCENARIO_DELETE_MY_RISK = 'delete-my-risk';
+
+const SCENARIO_VIEW_USER_RISKS = 'view-user-risks';
+
+const SCENARIO_VIEW_USER_RISK = 'view-user-risk';
+
+const SCENARIO_EDIT_USER_RISK = 'edit-user-risk';
+
+const SCENARIO_ADD_USER_RISK = 'add-user-risk';
+
+const SCENARIO_CLONE_RISK = 'clone-risk';
+
+const SCENARIO_DELETE_USER_RISK = 'delete-user-risk';
+
+
+
+/**
+ * @var Risk|null
+ */
+private $risk = null;
+
+/**
+ * @var Risk[]
+ */
+private $risks = [];
+
+
+/**
+ * @return array
+ */
+private function getRiskValidFilters()
+{
+    return ['status', 'id'];
+}
+
+/**
+ * @return string
+ */
+public function getModuleName()
+{
+    return self::MODULE_RISK_PANEL;
+}
+
+/**
+ * @param array $filter
+ * @return $this
+ * @throws ForbiddenHttpException
+ */
+public function setUserRisksByCondition(array $filter = [])
+{
+    //TODO setUserRiskByCondition & setUserRisksByCondition - вынести общую логику в приватный метод
+    if (!$this->isAccessToScenario()) {
+        return $this;
+    }
+
+    $validFilters = $this->getRiskValidFilters();
+    $conditions = array_filter(
+        $filter,
+        function ($value, $key) use ($validFilters) {
+            return in_array($key, $validFilters) && $value ? true : false;
+        },
+        ARRAY_FILTER_USE_BOTH
+    );
+
+    $conditions['user_id'] = $this->accessModule->getUserId();
+
+    $risks = Risk::find()->where($conditions)->orderBy(['order' => 'ASC']);
+
+    if (!$this->accessModule->isWatcherDoctor()) {
+        $risks = $risks->andWhere(['!=', 'status', RiskView::STATUS_DELETED]);
+    }
+    $risks = $risks->all();
+
+    if (!$this->watcherHasPermission(self::SCENARIO_VIEW_USER_RISKS)) {
+        //Если пользователь не обладает нужными правами,
+        //не даем просматривать черновики, последний редактор которых не текущий пользователь
+        $userId = $this->accessModule->getUserId();
+
+        $risks = array_filter(
+            $risks,
+            function ($item) use ($userId) {
+                /** @var Risk $item */
+                if ($item->status == Risk::STATUS_DRAFT && $item->editor_id != $userId) {
+                    return false;
+                }
+
+                return true;
+            }
+        );
+    }
+
+    // фиксируем взаимодейстиве доктора с пациентом
+    $this->setPatientRecent();
+
+    $this->risks = $risks;
+
+    return $this;
+}
+
+
+public function getRisks()
+{
+    return array_map(
+        function ($item) {
+            return new RiskView($item);
+        },
+        $this->risks
+    );
+}
+
+
+/**
+ * @param $id
+ * @return $this
+ * @throws ForbiddenHttpException
+ */
+public function setUserRiskById($id)
+{
+    if (!$id) {
+        $this->errors[] = CoreHelper::t('Не указан ID риска');
+
+        return $this;
+    }
+
+    //При данном сценарии модуль пользователей не проинициализирован должным образом
+    $risk = Risk::findOne($id);
+
+    if (!$risk) {
+        $this->errors[] = CoreHelper::t('Доступ ограничен');
+
+        return $this;
+    }
+
+    $this->accessModule->setUserById($risk->user_id);
+
+    if (!$this->isAccessToScenario()) {
+        return $this;
+    }
+
+    if (!$this->watcherHasPermission(self::SCENARIO_VIEW_USER_RISKS)) {
+        //Если пользователь не обладает нужными правами,
+        //не даем просматривать черновики, последний редактор которых не текущий пользователь
+        if ($risk->status == Risk::STATUS_DRAFT && $risk->editor_id != $this->accessModule->getUserId()) {
+            $this->errors[] = CoreHelper::t('Доступ ограничен');
+            $risk = null;
+        }
+    }
+
+    // фиксируем взаимодейстиве доктора с пациентом
+    $this->setPatientRecent();
+
+    $this->risk = $risk;
+
+    return $this;
+}

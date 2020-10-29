@@ -1,0 +1,280 @@
+/**
+* @var RiskPanelService
+*/
+protected $service;
+
+/**
+ * @return array
+ */
+protected function verbs()
+{
+    return [
+        'index'            => ['GET'],
+        'view-by-user'     => ['GET'],
+        'add'              => ['POST'],
+        'add-risk-to-user' => ['POST'],
+        'view'             => ['GET'],
+        'view-user-risk'   => ['GET'],
+        'edit'             => ['PUT'],
+        'edit-user-risk'   => ['PUT'],
+        'change-priority'  => ['PUT'],
+        'clone'            => ['POST'],
+        'get-status-list'  => ['GET'],
+    ];
+}
+
+/**
+ * RiskPanelController constructor.
+ * @param $id
+ * @param $module
+ * @param array $config
+ */
+public function __construct($id, $module, $config = [])
+{
+    parent::__construct($id, $module, $config);
+    $this->service = new RiskPanelService(RisksModule::getModule());
+}
+
+/**
+ * @SWG\Get(
+ *     path="/risk-panel",
+ *     summary="Cписок рисков пользователя.",
+ *     tags={"Риск-Панель"},
+ *     produces={"application/json"},
+ *     @SWG\Parameter(
+ *          name="status",
+ *          in="query",
+ *          type="string",
+ *          enum={"active", "close"}
+ *      ),
+ *     @SWG\Response(
+ *         response = 200,
+ *         description = "Success",
+ *         @SWG\Header(header="Content-Type", type="application/json;"),
+ *         @SWG\Schema(type="array", @SWG\Items(ref="#/definitions/RiskDto"))
+ *      ),
+ *     security={{
+ *        "auth":{}
+ *     }}
+ * )
+ *
+ * @param string $status
+ * @return array
+ * @throws ForbiddenHttpException
+ * @throws InvalidDataTypeException
+ * @throws \yii\base\Exception
+ */
+public function actionIndex(string $status = null)
+{
+    $this->service->setScenario(
+        RisksModule::SCENARIO_VIEW_MY_RISK,
+        $this->user->getId(),
+        $this->user->getId()
+    );
+    return $this->response($this->service->getList(new RiskFilterDto(compact('status'))));
+}
+
+/**
+ * @SWG\Get(
+ *     path="/risk-panel/view-by-user",
+ *     summary="список рисков пациента.",
+ *     tags={"Риск-Панель"},
+ *     produces={"application/json"},
+ *     @SWG\Parameter(
+ *          name="status",
+ *          in="query",
+ *          type="string",
+ *          enum={"active", "close"}
+ *      ),
+ *     @SWG\Parameter(
+ *          name="userGuid",
+ *          in="query",
+ *          required=true,
+ *          type="string"
+ *      ),
+ *     @SWG\Response(
+ *         response = 200,
+ *         description = "Success",
+ *         @SWG\Header(header="Content-Type", type="application/json;"),
+ *         @SWG\Schema(type="array", @SWG\Items(ref="#/definitions/RiskDto"))
+ *      ),
+ *     security={{
+ *        "auth":{}
+ *     }}
+ * )
+ *
+ * @param $userGuid
+ * @param string $status
+ * @return array
+ * @throws ForbiddenHttpException
+ * @throws InvalidDataTypeException
+ * @throws \yii\base\Exception
+ */
+public function actionViewByUser($userGuid, string $status = null)
+{
+    $user = SiteUser::findIdentity($userGuid);
+    if (!$user) {
+        throw new ForbiddenHttpException('Отказано в доступе');
+    }
+    $this->service->setScenario(
+        RisksModule::SCENARIO_VIEW_USER_RISKS,
+        $this->user->getId(),
+        $userGuid
+    );
+    return $this->response($this->service->getList(new RiskFilterDto(compact('status'))));
+}
+
+/**
+ *
+ * @SWG\Post(
+ *     path="/risk-panel/add",
+ *     summary="Добавить риск.",
+ *     tags={"Риск-Панель"},
+ *     produces={"application/json"},
+ *     @SWG\Parameter(
+ *         name="body",
+ *         in="body",
+ *         required=true,
+ *         @SWG\Schema(ref="#/definitions/RiskForm"),
+ *     ),
+ *     @SWG\Response(
+ *         response = 200,
+ *         description = "Success",
+ *         @SWG\Schema(ref="#/definitions/RiskDto"),
+ *         @SWG\Header(header="Content-Type", type="application/json;"),
+ *      ),
+ *     @SWG\Response(
+ *          response=422,
+ *          description="Validation Error",
+ *          @SWG\Schema(ref="#/definitions/ValidationError"),
+ *          @SWG\Header(header="Content-Type", type="application/json;")
+ *     ),
+ *     security={{
+ *        "auth":{}
+ *     }}
+ * )
+ *
+ *
+ * @return RiskForm|array
+ * @throws ForbiddenHttpException
+ * @throws InvalidDataTypeException
+ * @throws \yii\base\Exception
+ */
+public function actionAdd()
+{
+    $model = new RiskForm();
+    if ($model->load(Yii::$app->request->post(), '') && $model->validate()) {
+        $this->service->setScenario(RisksModule::SCENARIO_ADD_MY_RISK,
+            $this->user->getId(),
+            $this->user->getId()
+        );
+
+        return $this->response($this->service->create(new RiskDto($model->toArray())));
+    }
+
+    return $model;
+}
+
+/**
+ *
+ * @SWG\Post(
+ *     path="/risk-panel/add-risk-to-user",
+ *     summary="Добавить риск пользователю.",
+ *     tags={"Риск-Панель"},
+ *     produces={"application/json"},
+ *     @SWG\Parameter(
+ *          name="userGuid",
+ *          in="query",
+ *          required=true,
+ *          type="string"
+ *      ),
+ *     @SWG\Parameter(
+ *         name="body",
+ *         in="body",
+ *         required=true,
+ *         @SWG\Schema(ref="#/definitions/RiskForm"),
+ *     ),
+ *     @SWG\Response(
+ *         response = 200,
+ *         description = "Success",
+ *         @SWG\Schema(ref="#/definitions/RiskDto"),
+ *         @SWG\Header(header="Content-Type", type="application/json;"),
+ *      ),
+ *     @SWG\Response(
+ *          response=422,
+ *          description="Validation Error",
+ *          @SWG\Schema(ref="#/definitions/ValidationError"),
+ *          @SWG\Header(header="Content-Type", type="application/json;")
+ *     ),
+ *     security={{
+ *        "auth":{}
+ *     }}
+ * )
+ *
+ *
+ * @param $userGuid
+ * @return RiskForm|array
+ * @throws ForbiddenHttpException
+ * @throws InvalidDataTypeException
+ * @throws \yii\base\Exception
+ */
+public function actionAddRiskToUser($userGuid)
+{
+    $user = SiteUser::findIdentity($userGuid);
+    if (!$user) {
+        throw new ForbiddenHttpException('Отказано в доступе');
+    }
+
+    $model = new RiskForm();
+    if ($model->load(Yii::$app->request->post(), '') && $model->validate()) {
+        $this->service->setScenario(
+            RisksModule::SCENARIO_ADD_USER_RISK,
+            $this->user->getId(),
+            $userGuid
+        );
+
+        return $this->response($this->service->create(new RiskDto($model->toArray())));
+    }
+
+    return $model;
+}
+
+/**
+ * @SWG\Get(
+ *     path="/risk-panel/view",
+ *     summary="Посмотреть риск по идентификатору.",
+ *     tags={"Риск-Панель"},
+ *     produces={"application/json"},
+ *     @SWG\Parameter(
+ *          name="id",
+ *          in="query",
+ *          type="string"
+ *      ),
+ *     @SWG\Response(
+ *         response = 200,
+ *         description = "Success",
+ *         @SWG\Header(header="Content-Type", type="application/json;"),
+ *         @SWG\Schema(ref="#/definitions/RiskDto")
+ *      ),
+ *     security={{
+ *        "auth":{}
+ *     }}
+ * )
+ *
+ * @param $id
+ * @return array
+ * @throws ForbiddenHttpException
+ * @throws InvalidDataTypeException
+ * @throws \yii\base\Exception
+ */
+public function actionView($id)
+{
+    $this->service->setScenario(
+        RisksModule::SCENARIO_VIEW_MY_RISK,
+        $this->user->getId(),
+        $this->user->getId()
+    );
+
+    return $this->response($this->service->get(HtmlPurifier::process($id)));
+}
+

@@ -1,0 +1,161 @@
+/**
+ * @const Активный
+ */
+const RISK_STATUS_ACTIVE = 'active';
+
+/**
+ * @const Закрытый
+ */
+const RISK_STATUS_CLOSE = 'close';
+
+/**
+ * @return array
+ */
+private function getActiveRiskStatus()
+{
+    return [
+        RiskView::STATUS_OPEN,
+        RiskView::STATUS_CONTROL,
+        RiskView::STATUS_MONITORING,
+    ];
+}
+
+/**
+ * @return array
+ */
+private function getCloseRiskStatus()
+{
+    return [
+        RiskView::STATUS_CLOSE,
+    ];
+}
+
+/**
+ * @param RiskFilterDto $filterDto
+ * @return RiskListDto
+ * @throws ForbiddenHttpException
+ * @throws Exception
+ */
+public function getList(RiskFilterDto $filterDto)
+{
+    $filter = [];
+    if ($filterDto->status->toScalar() == self::RISK_STATUS_ACTIVE) {
+        $filter['status'] = $this->getActiveRiskStatus();
+    } elseif ($filterDto->status->toScalar() == self::RISK_STATUS_CLOSE) {
+        $filter['status'] = $this->getCloseRiskStatus();
+    }
+    $this->module->setUserRisksByCondition($filter);
+    if ($this->module->hasErrors()) {
+        throw new ForbiddenHttpException(Yii::t('api', 'Отказано в доступе'));
+    }
+
+    return new RiskListDto((array)$this->module->getRisks());
+}
+
+/**
+ * @param $id
+ * @return RiskDto
+ * @throws ForbiddenHttpException
+ */
+public function get(int $id)
+{
+    $this->module->setUserRiskById($id);
+
+    if ($this->module->hasErrors()) {
+        throw new ForbiddenHttpException(Yii::t('api', 'Отказано в доступе'));
+    }
+
+    return new RiskDto((array)$this->module->getRisk());
+}
+
+/**
+ * @param RiskDto $dto
+ * @return RiskDto
+ * @throws ForbiddenHttpException
+ * @throws InvalidDataTypeException
+ */
+public function create(RiskDto $dto)
+{
+    if (!$this->module->isAccessToScenario()) {
+        throw new ForbiddenHttpException(Yii::t('api', 'Отказано в доступе'));
+    }
+
+    $this->module->saveRisk($dto->toArray());
+    if ($this->module->hasErrors()) {
+        throw new ForbiddenHttpException(
+            Yii::t('api', 'Ошибка при сохранении данных')
+        );
+    }
+
+    return new RiskDto((array)$this->module->getRisk());
+}
+
+/**
+ * @param $id
+ * @param RiskDto $dto
+ * @return RiskDto
+ * @throws ForbiddenHttpException
+ * @throws InvalidDataTypeException
+ */
+public function edit(int $id, RiskDto $dto)
+{
+    $this->module->setUserRiskById(HtmlPurifier::process($id));
+
+    if ($this->module->hasErrors()) {
+        throw new ForbiddenHttpException(Yii::t('api', 'Отказано в доступе'));
+    }
+
+    $this->module->saveRisk($dto->toArray());
+    if ($this->module->hasErrors()) {
+        throw new ForbiddenHttpException(
+            Yii::t('api', 'Ошибка при сохранении данных')
+        );
+    }
+
+    return new RiskDto((array)$this->module->getRisk());
+}
+
+/**
+ * @param $id
+ * @param int $order
+ * @return RiskDto
+ * @throws ForbiddenHttpException
+ */
+public function changeOrder(int $id, int $order)
+{
+    $this->module->setUserRiskById($id);
+    if ($this->module->hasErrors()) {
+        throw new ForbiddenHttpException(Yii::t('api', 'Отказано в доступе'));
+    }
+    $this->module->changeOrder($order);
+    if ($this->module->hasErrors()) {
+        throw new ForbiddenHttpException(
+            Yii::t('api', 'Ошибка при сохранении данных')
+        );
+    }
+    $this->module->setUserRiskById($id);
+
+    return new RiskDto((array)$this->module->getRisk());
+}
+
+/**
+ * @param $id
+ * @return RiskDto
+ * @throws ForbiddenHttpException
+ * @throws ServerErrorHttpException
+ * @throws \yii\db\Exception
+ */
+public function cloneRisk(int $id)
+{
+    $this->module->setUserRiskById($id);
+
+    if ($this->module->hasErrors()) {
+        throw new ForbiddenHttpException(Yii::t('api', 'Отказано в доступе'));
+    }
+    $this->module->cloneRisk();
+    if ($this->module->hasErrors()) {
+        throw new ServerErrorHttpException();
+    }
+    return new RiskDto((array)$this->module->getRisk());
+}
+
